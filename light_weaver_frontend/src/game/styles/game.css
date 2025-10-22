@@ -1,0 +1,69 @@
+.lw-board {
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.lw-board-inner {
+  position: relative;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
+}
+
+.lw-canvas {
+  display: block;
+}
+
+.lw-grid-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.lw-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+
+.lw-tile {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(0,0,0,0.06);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #334155;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.lw-tile.empty {
+  cursor: default;
+}
+
+.lw-tile.mirror {
+  cursor: pointer;
+}
+
+.lw-tile.clickable:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.mirror-glyph {
+  color: #334155;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+  font-size: 18px;
+  user-select: none;
+}
+
+@media (max-width: 480px) {
+  .mirror-glyph { font-size: 16px; }
+}
