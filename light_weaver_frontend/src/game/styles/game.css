@@ -12,6 +12,13 @@
   border: 1px solid var(--border);
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
 }
+.lw-board-inner.glow {
+  box-shadow:
+    0 0 0 1px rgba(16,185,129,0.25),
+    0 10px 30px rgba(0,0,0,0.06),
+    0 0 28px rgba(16,185,129,0.25);
+  transition: box-shadow .25s ease;
+}
 
 .lw-canvas {
   display: block;
@@ -41,7 +48,8 @@
   place-items: center;
   color: #334155;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 18px;
+  touch-action: manipulation; /* better mobile behavior */
 }
 
 .lw-tile.empty {
@@ -52,18 +60,87 @@
   cursor: pointer;
 }
 
-.lw-tile.clickable:focus {
-  outline: 2px solid var(--color-primary);
+.lw-tile.clickable:focus-visible {
+  outline: 3px solid var(--color-primary);
   outline-offset: -2px;
+  z-index: 1;
 }
 
 .mirror-glyph {
   color: #334155;
   text-shadow: 0 1px 0 rgba(255,255,255,0.4);
-  font-size: 18px;
+  font-size: 20px;
   user-select: none;
 }
 
 @media (max-width: 480px) {
-  .mirror-glyph { font-size: 16px; }
+  .mirror-glyph { font-size: 18px; }
+}
+
+/* HUD */
+.lw-hud {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 16px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lw-hud-item strong { color: var(--text); }
+
+/* Banner */
+.lw-banner {
+  margin: 8px 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+}
+.lw-banner.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #065f46;
+  border-color: rgba(16, 185, 129, 0.3);
+  animation: lwPulse 0.6s ease;
+}
+@keyframes lwPulse {
+  0% { transform: scale(0.98); opacity: .6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Modal */
+.lw-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17,24,39,0.45);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 40;
+}
+.lw-modal {
+  width: min(420px, 96vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  padding: 18px;
+}
+.lw-modal-title {
+  margin: 6px 0 8px;
+  font-size: 18px;
+}
+.lw-modal-desc {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.lw-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
 }

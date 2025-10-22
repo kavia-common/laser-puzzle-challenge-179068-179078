@@ -29,13 +29,15 @@ function Tile({ tile, r, c, size, onRotate }) {
     <button
       className={`lw-tile ${tile?.type || 'empty'} ${isInteractive ? 'clickable' : ''}`}
       style={{ width: size, height: size }}
-      aria-label={`Tile ${r + 1}, ${c + 1}${isInteractive ? ', mirror - click to rotate' : ''}`}
+      aria-label={`Tile ${r + 1}, ${c + 1}${isInteractive ? ', mirror - activate to rotate' : ''}`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       disabled={!isInteractive}
       tabIndex={isInteractive ? 0 : -1}
+      role="gridcell"
+      aria-pressed={isInteractive ? undefined : undefined}
     >
-      {tile?.type === 'mirror' ? <span className="mirror-glyph">{mirrorChar}</span> : null}
+      {tile?.type === 'mirror' ? <span className="mirror-glyph" aria-hidden="true">{mirrorChar}</span> : null}
     </button>
   );
 }

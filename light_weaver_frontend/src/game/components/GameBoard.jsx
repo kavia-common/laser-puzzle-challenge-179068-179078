@@ -13,10 +13,10 @@ const isDevPerf = typeof window !== 'undefined' && !!window.__LW_DEV;
  * - An interactive grid of tiles for mirrors (kept as lightweight buttons).
  * - Caches the static grid background using an offscreen canvas per cell size.
  */
-const CELL_SIZE_BASE = 44; // base size; responsive scaling applied
+const CELL_SIZE_BASE = 46; // slightly larger base for better touch targets
 
 // PUBLIC_INTERFACE
-export default function GameBoard({ grid, staticItems, targets, levelInfo, onRotate, onTargetsUpdate }) {
+export default function GameBoard({ grid, staticItems, targets, levelInfo, onRotate, onTargetsUpdate, success = false }) {
   /** grid: 2D array of tiles { type: 'empty'|'mirror'|'block', orientation? }
    * staticItems: reserved
    * targets: array of { r, c, lit }
@@ -41,7 +41,7 @@ export default function GameBoard({ grid, staticItems, targets, levelInfo, onRot
     // Fit grid within container width with padding
     const width = containerRef.current?.clientWidth || (cols * CELL_SIZE_BASE + 16);
     const maxCell = Math.floor((Math.min(width, 600)) / cols);
-    return Math.max(26, Math.min(56, maxCell));
+    return Math.max(32, Math.min(60, maxCell));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cols, levelInfo.rows]);
 
@@ -120,12 +120,17 @@ export default function GameBoard({ grid, staticItems, targets, levelInfo, onRot
     ctx.lineCap = 'round';
     for (let i = 0; i < beams.length; i++) {
       const seg = beams[i];
+      // subtle beam glow
+      ctx.shadowColor = seg.color || '#fb923c';
+      ctx.shadowBlur = Math.max(2, Math.floor(cellSize / 10));
       ctx.strokeStyle = seg.color || '#fb923c';
       ctx.beginPath();
       ctx.moveTo(seg.x1 * cellSize + cellSize / 2, seg.y1 * cellSize + cellSize / 2);
       ctx.lineTo(seg.x2 * cellSize + cellSize / 2, seg.y2 * cellSize + cellSize / 2);
       ctx.stroke();
     }
+    // reset glow
+    ctx.shadowBlur = 0;
 
     // Lasers origin highlight
     for (let i = 0; i < levelInfo.lasers.length; i++) {
@@ -138,29 +143,45 @@ export default function GameBoard({ grid, staticItems, targets, levelInfo, onRot
       ctx.fill();
     }
 
-    // Targets highlight
+    // Targets highlight with pulse when lit
+    const now = Date.now();
     for (let i = 0; i < targets.length; i++) {
       const t = targets[i];
       const x = t.c * cellSize;
       const y = t.r * cellSize;
+      const baseR = cellSize * 0.2;
+      const lit = !!t.lit;
+
+      // fill
       ctx.beginPath();
-      ctx.fillStyle = t.lit ? '#10b981' : '#9CA3AF';
-      ctx.arc(x + cellSize / 2, y + cellSize / 2, cellSize * 0.2, 0, Math.PI * 2);
+      ctx.fillStyle = lit ? '#10b981' : '#9CA3AF';
+      ctx.arc(x + cellSize / 2, y + cellSize / 2, baseR, 0, Math.PI * 2);
       ctx.fill();
+
+      // pulse ring on lit
+      if (lit) {
+        const pulse = (Math.sin(now / 200) + 1) / 2; // 0..1
+        const ringR = baseR + pulse * (cellSize * 0.08);
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(16,185,129,0.7)';
+        ctx.lineWidth = Math.max(2, Math.floor(cellSize / 18));
+        ctx.arc(x + cellSize / 2, y + cellSize / 2, ringR, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     if (isDevPerf) console.timeEnd?.('board-draw');
-  }, [beams, cellSize, cols, rows, ensureOffscreen, levelInfo.lasers, targets]);
+  }, [beams, cellSize, cols, rows, ensureOffscreen, levelInfo.lasers, targets, success]);
 
   // Memoized Tile to avoid re-rendering non-changing cells
   const MemoTile = useMemo(() => React.memo(Tile), []);
 
   return (
     <div className="lw-board" ref={containerRef} style={{ width: Math.min(600, cols * cellSize) }}>
-      <div className="lw-board-inner" style={{ width: cols * cellSize, height: rows * cellSize }}>
+      <div className={`lw-board-inner ${success ? 'glow' : ''}`} style={{ width: cols * cellSize, height: rows * cellSize }}>
         <canvas ref={canvasRef} className="lw-canvas" aria-label="Beam canvas" />
-        <div className="lw-grid-overlay">
+        <div className="lw-grid-overlay" role="grid" aria-label="Puzzle grid">
           {grid.map((row, r) => (
-            <div className="lw-row" key={`r-${r}`} style={{ height: cellSize }}>
+            <div className="lw-row" key={`r-${r}`} style={{ height: cellSize }} role="row">
               {row.map((tile, c) => (
                 <MemoTile
                   key={`t-${r}-${c}`}

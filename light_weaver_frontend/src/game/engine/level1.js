@@ -8,10 +8,12 @@ function makeEmpty() {
   );
 }
 
-// Seed mirrors for the MVP
+// Seed mirrors for the MVP (slightly tuned for a clean 3-4 move solve)
 const initialGrid = makeEmpty();
-initialGrid[3][2] = { type: 'mirror', orientation: 'slash' };
-initialGrid[4][5] = { type: 'mirror', orientation: 'backslash' };
+// A gentle path: up from (6,1)-> reflect right -> up -> right into target
+initialGrid[5][1] = { type: 'mirror', orientation: 'backslash' }; // turns up->right
+initialGrid[5][4] = { type: 'mirror', orientation: 'slash' };     // turns right->up
+initialGrid[2][4] = { type: 'mirror', orientation: 'backslash' }; // turns up->right near target
 
 // Targets
 const targets = [

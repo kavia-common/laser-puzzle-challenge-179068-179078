@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import './App.css';
 import './game/styles/game.css';
 import GameBoard from './game/components/GameBoard';
@@ -51,6 +51,17 @@ function App() {
   const [boardSize, setBoardSize] = useState({ rows: level1.rows, cols: level1.cols });
   const [rotationKey, setRotationKey] = useState(0); // trigger rerender for canvas sizing on layout changes
 
+  // UX state
+  const [moves, setMoves] = useState(0);
+  const [best, setBest] = useState(() => {
+    const v = localStorage.getItem('lw_best_level1');
+    return v ? parseInt(v, 10) : null;
+  });
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [hitPulse, setHitPulse] = useState(false); // brief banner pulse on first complete hit
+  const historyRef = useRef([]); // stack of {r,c}
+  const lastTargetsLitRef = useRef(false); // track success transitions
+
   // API status badge state
   const [apiStatus, setApiStatus] = useState({
     state: 'checking', // 'ok' | 'degraded' | 'offline' | 'checking'
@@ -65,7 +76,7 @@ function App() {
   const styleVars = useMemo(() => ({
     '--color-primary': '#2563EB',
     '--color-secondary': '#F59E0B',
-    '--color-success': '#F59E0B',
+    '--color-success': '#10B981',
     '--color-error': '#EF4444',
     '--bg': '#f9fafb',
     '--surface': '#ffffff',
@@ -138,19 +149,43 @@ function App() {
 
   /**
    * Rotate a mirror at (r,c). Uses functional setState to batch updates.
+   * Pushes to history for undo and increments moves.
    */
   const handleRotate = useCallback((r, c) => {
     setGrid(prev => {
-      // copy rows shallowly; copy only the touched tile deeply
-      const next = prev.map(row => row);
       const tile = prev[r][c];
-      if (tile?.type === 'mirror') {
-        const nextOri = tile.orientation === 'slash' ? 'backslash' : 'slash';
-        // avoid recreating entire row if possible
-        const newRow = next[r].slice();
-        newRow[c] = { ...tile, orientation: nextOri };
-        next[r] = newRow;
-      }
+      if (tile?.type !== 'mirror') return prev;
+
+      // push history (r,c) to allow undo toggle
+      historyRef.current.push({ r, c });
+
+      const next = prev.map(row => row);
+      const nextOri = tile.orientation === 'slash' ? 'backslash' : 'slash';
+      const newRow = next[r].slice();
+      newRow[c] = { ...tile, orientation: nextOri };
+      next[r] = newRow;
+
+      // increment move count
+      setMoves(m => m + 1);
+      return next;
+    });
+  }, []);
+
+  // PUBLIC_INTERFACE
+  const handleUndo = useCallback(() => {
+    const last = historyRef.current.pop();
+    if (!last) return;
+    const { r, c } = last;
+    setGrid(prev => {
+      const tile = prev[r][c];
+      if (tile?.type !== 'mirror') return prev;
+      const next = prev.map(row => row);
+      const newRow = next[r].slice();
+      // reverse the rotation
+      const prevOri = tile.orientation === 'slash' ? 'backslash' : 'slash';
+      newRow[c] = { ...tile, orientation: prevOri };
+      next[r] = newRow;
+      setMoves(m => Math.max(0, m - 1));
       return next;
     });
   }, []);
@@ -161,7 +196,36 @@ function App() {
     setTargets(level1.targets.map(t => ({ ...t })));
     setBoardSize({ rows: level1.rows, cols: level1.cols });
     setRotationKey(k => k + 1);
+    setMoves(0);
+    historyRef.current = [];
+    setShowSuccess(false);
+    setHitPulse(false);
+    lastTargetsLitRef.current = false;
   };
+
+  const onTargetsUpdate = useCallback((newTargets) => {
+    setTargets(newTargets);
+    const allLit = newTargets.every(t => !!t.lit);
+    // transition detection for visual pulse and success modal
+    if (allLit && !lastTargetsLitRef.current) {
+      setHitPulse(true);
+      setTimeout(() => setHitPulse(false), 600);
+
+      // set best score (lower is better)
+      setBest(prevBest => {
+        const newBest = prevBest == null ? moves : Math.min(prevBest, moves);
+        localStorage.setItem('lw_best_level1', String(newBest));
+        return newBest;
+      });
+
+      // brief delay before showing modal for nicer feel
+      setTimeout(() => setShowSuccess(true), 250);
+    }
+    if (!allLit && lastTargetsLitRef.current) {
+      setShowSuccess(false);
+    }
+    lastTargetsLitRef.current = allLit;
+  }, [moves]);
 
   const levelInfo = useMemo(() => ({
     lasers: level1.lasers,
@@ -199,16 +263,35 @@ function App() {
             <button className="lw-btn lw-btn-secondary" onClick={handleReset} aria-label="Reset level">
               ⟳ Reset
             </button>
+            <button className="lw-btn lw-btn-secondary" onClick={handleUndo} aria-label="Undo last move" disabled={historyRef.current.length === 0}>
+              ↶ Undo
+            </button>
           </div>
         </div>
       </header>
 
       <main className="lw-main">
-        <section className="lw-card">
+        <section className="lw-card" aria-live="polite">
           <div className="lw-card-header">
             <h2 className="lw-card-title">Level 1: First Reflection</h2>
             <p className="lw-card-desc">Rotate mirrors to guide the beam into the target.</p>
           </div>
+
+          <div className="lw-hud">
+            <div className="lw-hud-item" aria-label={`Moves used: ${moves}`} role="status">
+              🧭 Moves: <strong>{moves}</strong>
+            </div>
+            <div className="lw-hud-item" aria-label={`Best score: ${best ?? 'none yet'}`} role="status">
+              ⭐ Best: <strong>{best ?? '—'}</strong>
+            </div>
+          </div>
+
+          {hitPulse && (
+            <div className="lw-banner success" role="status" aria-live="assertive">
+              Target hit! Beautiful reflection ✨
+            </div>
+          )}
+
           <div className="lw-board-wrap">
             <GameBoard
               key={rotationKey}
@@ -217,7 +300,8 @@ function App() {
               targets={targets}
               levelInfo={levelInfo}
               onRotate={handleRotate}
-              onTargetsUpdate={setTargets}
+              onTargetsUpdate={onTargetsUpdate}
+              success={lastTargetsLitRef.current}
             />
           </div>
           <div className="lw-legend">
@@ -236,6 +320,27 @@ function App() {
           <span>Offline-ready gameplay (API optional)</span>
         </div>
       </footer>
+
+      {showSuccess && (
+        <div className="lw-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="success-title">
+          <div className="lw-modal">
+            <h3 id="success-title" className="lw-modal-title">Level Complete 🎉</h3>
+            <p className="lw-modal-desc">You guided the beam to the target in <strong>{moves}</strong> moves.</p>
+            <div className="lw-modal-actions">
+              <button className="lw-btn" onClick={handleReset} aria-label="Play again">
+                ▶ Play again
+              </button>
+              <button
+                className="lw-btn lw-btn-secondary"
+                onClick={() => setShowSuccess(false)}
+                aria-label="Continue to next level"
+              >
+                ➡ Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
