@@ -74,6 +74,43 @@ a { color: var(--color-primary); }
 .lw-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+/* API status badge */
+.lw-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: #f3f4f6;
+  color: #374151;
+}
+.lw-badge .dot { margin: 0; font-size: 16px; line-height: 0; }
+
+.lw-badge.ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: #065f46;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.lw-badge.degraded {
+  background: rgba(245, 158, 11, 0.14);
+  color: #7c2d12;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+.lw-badge.offline {
+  background: rgba(239, 68, 68, 0.12);
+  color: #7f1d1d;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.lw-badge.checking {
+  background: #eef2ff;
+  color: #1e3a8a;
+  border-color: #c7d2fe;
 }
 
 .lw-btn {

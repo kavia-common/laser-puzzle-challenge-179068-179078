@@ -1,49 +1,77 @@
-const CACHE_NAME = 'light-weaver-mvp-v1';
-const CORE_ASSETS = [
+const CACHE_NAME = 'lw-static-v1';
+const ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json',
-  '/assets/icon-192.png',
-  '/assets/icon-512.png'
+  '/manifest.json'
+  // Note: CRA will serve hashed assets; we rely on network-first for them,
+  // and basic offline shell for index.html.
 ];
 
+// Install: pre-cache app shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(ASSETS))
+      .catch(() => {})
   );
+  self.skipWaiting();
 });
 
+// Activate: cleanup old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
   );
+  self.clients.claim();
 });
 
+// Fetch strategy:
+// - Do NOT intercept or cache cross-origin calls or calls to likely backend ports (e.g., :3001).
+// - For same-origin navigation and static files, try network first, fallback to cache, then to offline shell.
+// - Respect "no-store" requests by bypassing cache.
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  if (request.method !== 'GET') return;
+  const req = event.request;
+  const url = new URL(req.url);
+  const isSameOrigin = url.origin === self.location.origin;
 
-  if (request.headers.get('accept')?.includes('text/html')) {
+  // Bypass for requests with no-store/no-cache directives to avoid blocking backend version/status calls
+  const cacheControl = req.headers.get('Cache-Control') || '';
+  if (/no-store|no-cache/i.test(cacheControl)) {
+    return; // allow default browser fetch
+  }
+
+  // Never handle cross-origin requests (like backend http(s)://host:3001)
+  if (!isSameOrigin) {
+    return;
+  }
+
+  // If request appears to be to a backend port on same host (e.g., proxy scenarios), bypass
+  if (url.port && url.port !== self.location.port) {
+    return;
+  }
+
+  // Navigation requests: network-first, fallback to cache
+  if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(request).then(resp => {
-        const clone = resp.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-        return resp;
-      }).catch(() => caches.match(request).then(r => r || caches.match('/index.html')))
+      fetch(req).catch(() =>
+        caches.match('/index.html').then((res) => res || Response.error())
+      )
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then(cached => {
-      if (cached) return cached;
-      return fetch(request).then(resp => {
-        const clone = resp.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-        return resp;
-      }).catch(() => cached);
-    })
-  );
+  // Static assets: network-first, then cache fallback
+  if (req.method === 'GET') {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match(req).then((res) => res || Response.error()))
+    );
+  }
 });

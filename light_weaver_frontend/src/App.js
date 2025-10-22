@@ -4,6 +4,39 @@ import './game/styles/game.css';
 import GameBoard from './game/components/GameBoard';
 import level1 from './game/engine/level1';
 
+// Helper to fetch with timeout and graceful fallback
+async function fetchWithTimeout(resource, options = {}) {
+  const { timeout = 2500, ...rest } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(resource, { ...rest, signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  } catch (e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
+// Resolve backend base URL: prefer env, else infer from window location on different port
+function getBackendBaseUrl() {
+  // Allow override via env if CRA-style injected at build time
+  const envUrl = process.env.REACT_APP_BACKEND_URL;
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+
+  // Default: assume backend runs on same hostname at 3001
+  try {
+    const loc = window.location;
+    const proto = loc.protocol;
+    const host = loc.hostname;
+    const port = '3001';
+    return `${proto}//${host}:${port}`;
+  } catch {
+    return 'http://localhost:3001';
+  }
+}
+
 // PUBLIC_INTERFACE
 function App() {
   /**
@@ -17,6 +50,13 @@ function App() {
   const [targets, setTargets] = useState(level1.targets);
   const [boardSize, setBoardSize] = useState({ rows: level1.rows, cols: level1.cols });
   const [rotationKey, setRotationKey] = useState(0); // trigger rerender for canvas sizing on layout changes
+
+  // API status badge state
+  const [apiStatus, setApiStatus] = useState({
+    state: 'checking', // 'ok' | 'degraded' | 'offline' | 'checking'
+    label: 'Checking API…',
+    version: null
+  });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -36,6 +76,58 @@ function App() {
     const root = document.documentElement;
     Object.entries(styleVars).forEach(([k, v]) => root.style.setProperty(k, v));
   }, [styleVars]);
+
+  // Probe backend once on mount and when coming back online
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkApi() {
+      const base = getBackendBaseUrl();
+      try {
+        const res = await fetchWithTimeout(`${base}/version`, {
+          method: 'GET',
+          // Ensure SW and intermediate caches don't block fresh fetch
+          cache: 'no-store',
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          timeout: 2500
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setApiStatus({
+          state: 'ok',
+          label: data?.version ? `API ${data.version}` : 'API online',
+          version: data?.version || null
+        });
+      } catch (e) {
+        if (cancelled) return;
+        // Distinguish between abort/timeouts and other errors lightly
+        const offline = !navigator.onLine || (e?.name === 'AbortError');
+        setApiStatus({
+          state: offline ? 'offline' : 'degraded',
+          label: offline ? 'Offline' : 'API unreachable',
+          version: null
+        });
+      }
+    }
+
+    checkApi();
+
+    // Re-check when browser comes back online
+    function onOnline() {
+      setApiStatus((s) => ({ ...s, state: 'checking', label: 'Rechecking…' }));
+      checkApi();
+    }
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', onOnline);
+    };
+  }, []);
 
   // PUBLIC_INTERFACE
   const toggleTheme = () => {
@@ -84,6 +176,14 @@ function App() {
             </div>
           </div>
           <div className="lw-actions">
+            <div
+              className={`lw-badge ${apiStatus.state}`}
+              title={apiStatus.version ? `Backend version ${apiStatus.version}` : 'Backend status'}
+              aria-live="polite"
+            >
+              <span className="dot" aria-hidden="true">•</span>
+              <span className="lw-badge-text">{apiStatus.label}</span>
+            </div>
             <button
               className="lw-btn"
               onClick={toggleTheme}
@@ -128,7 +228,7 @@ function App() {
         <div className="lw-container">
           <span>Ocean Professional Theme</span>
           <span className="dot">•</span>
-          <span>Offline-ready PWA</span>
+          <span>Offline-ready gameplay (API optional)</span>
         </div>
       </footer>
     </div>

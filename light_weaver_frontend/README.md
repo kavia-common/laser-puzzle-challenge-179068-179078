@@ -1,82 +1,67 @@
-# Lightweight React Template for KAVIA
+# Light Weaver Frontend (React)
 
-This project provides a minimal React template with a clean, modern UI and minimal dependencies.
+Modern, lightweight React frontend for the Light Weaver MVP.
 
 ## Features
 
-- **Lightweight**: No heavy UI frameworks - uses only vanilla CSS and React
-- **Modern UI**: Clean, responsive design with KAVIA brand styling
-- **Fast**: Minimal dependencies for quick loading times
-- **Simple**: Easy to understand and modify
+- Clean, responsive UI with Ocean Professional theme
+- Playable single-level laser puzzle with live beam simulation
+- Offline-friendly PWA: the game logic and UI work offline
+- API status badge that pings the backend `/version` endpoint with a timeout and graceful fallback
 
-## Getting Started
+## Running locally
 
-In the project directory, you can run:
+Start the backend first (default on port 3001), then start the frontend (port 3000):
 
-### `npm start`
+```bash
+# Backend (in ../laser-puzzle-challenge-179068-179079/backend)
+npm install
+npm run dev  # or: npm start
 
-Runs the app in development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-### `npm test`
-
-Launches the test runner in interactive watch mode.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-## Customization
-
-### Colors
-
-The main brand colors are defined as CSS variables in `src/App.css`:
-
-```css
-:root {
-  --kavia-orange: #E87A41;
-  --kavia-dark: #1A1A1A;
-  --text-color: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --border-color: rgba(255, 255, 255, 0.1);
-}
+# Frontend (in this folder)
+npm install
+npm start
 ```
 
-### Components
+By default, the frontend expects the backend at the same host on port `3001`. You can override this via an environment variable:
 
-This template uses pure HTML/CSS components instead of a UI framework. You can find component styles in `src/App.css`. 
+```bash
+# Unix/Mac
+REACT_APP_BACKEND_URL="http://localhost:3001" npm start
 
-Common components include:
-- Buttons (`.btn`, `.btn-large`)
-- Container (`.container`)
-- Navigation (`.navbar`)
-- Typography (`.title`, `.subtitle`, `.description`)
+# Windows (PowerShell)
+set REACT_APP_BACKEND_URL=http://localhost:3001
+npm start
+```
 
-## Learn More
+## API status badge
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- Located in the top-right of the header.
+- Attempts a GET to `<BACKEND_URL>/version` with a 2.5s timeout.
+- States:
+  - OK: backend reachable (shows `API <version>` when available)
+  - Degraded: request failed but browser is online
+  - Offline: browser offline or request timed out
+- The request uses `cache: 'no-store'` and `Cache-Control: no-store` to avoid SW/browser caching.
 
-### Code Splitting
+## Service Worker and offline behavior
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+- A minimal service worker is registered from `public/service-worker.js`.
+- It only caches an app shell (`/`, `/index.html`), avoids intercepting cross-origin requests and requests to other ports, and respects `no-store` directives.
+- Backend API calls are not cached and are allowed to pass through to the network.
+- Gameplay continues offline; the API badge will show “Offline”.
 
-### Analyzing the Bundle Size
+## Scripts
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- `npm start` – start local dev server on http://localhost:3000
+- `npm test` – run tests
+- `npm run build` – production build
 
-### Making a Progressive Web App
+## Endpoints (backend)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+- `GET /` – health
+- `GET /version` – version/build info
+- `GET /levels` – list levels
+- `GET /levels/:id` – get level by id
 
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+For interactive API docs, visit backend `/docs`.
