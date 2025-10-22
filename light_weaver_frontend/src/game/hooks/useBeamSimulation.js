@@ -1,86 +1,78 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { traceBeams } from '../engine/beamTracer';
 
 /**
- * Ray stepping across grid with simple reflections on two mirror types:
- * - 'slash' reflects (dx,dy) as (dy,dx) with inversion appropriate to axis
- * - 'backslash' reflects (dx,dy) as (-dy,-dx) similarly
- * We model direction as one of: 'up','down','left','right'.
+ * Beam simulation hook optimized for rendering loops.
+ * - Uses a pure tracer to compute segments.
+ * - Batches recomputation once per animation frame when inputs change.
+ * - Exposes a stable array reference that updates only when segments actually differ.
  */
 
-const dirToVec = {
-  up:    { dr: -1, dc:  0 },
-  down:  { dr:  1, dc:  0 },
-  left:  { dr:  0, dc: -1 },
-  right: { dr:  0, dc:  1 },
-};
-
-function reflect(orientation, dir) {
-  // For '/' mirror: up->right, right->up, down->left, left->down
-  // For '\' mirror: up->left, left->up, down->right, right->down
-  if (orientation === 'slash') {
-    return { up: 'right', right: 'up', down: 'left', left: 'down' }[dir];
-  }
-  return { up: 'left', left: 'up', down: 'right', right: 'down' }[dir];
-}
+// Dev instrumentation flag (no env needed per acceptance criteria)
+// Enable in console via window.__LW_DEV = true
+const isDevPerf = typeof window !== 'undefined' && !!window.__LW_DEV;
 
 // PUBLIC_INTERFACE
 export default function useBeamSimulation({ grid, lasers, rows, cols, targets, onTargetsUpdate }) {
   /**
-   * Computes beam segments in grid units.
-   * Returns array of segments: { x1,y1,x2,y2,color? }
-   * Also updates targets lit state instantly.
+   * Computes beam segments in grid units with batching per rAF.
+   * Returns array of segments: { x1,y1,x2,y2,color? }.
+   * Also emits target lit states via onTargetsUpdate once per frame.
    */
   const [segments, setSegments] = useState([]);
+  const rafId = useRef(0);
+  const pending = useRef(false);
+  const lastInputs = useRef(null);
+  const workSegments = useRef([]); // reusable array instance
 
-  const safeGrid = useMemo(() => grid.map(r => r.map(t => t ? { ...t } : { type: 'empty' })), [grid]);
-  const targetList = useMemo(() => targets.map(t => ({ ...t })), [targets]);
+  // Memoize shallow copies only when necessary to avoid frequent deep copies
+  const safeGrid = useMemo(() => grid, [grid]);
+  const lasersMemo = useMemo(() => lasers, [lasers]);
+  const targetsMemo = useMemo(() => targets, [targets]);
+  const dims = useMemo(() => ({ rows, cols }), [rows, cols]);
 
   useEffect(() => {
-    const segs = [];
-    // reset targets lit
-    targetList.forEach(t => { t.lit = false; });
+    // Queue a recompute on next frame, coalescing multiple changes
+    if (pending.current) return;
+    pending.current = true;
 
-    lasers.forEach(l => {
-      let r = l.r;
-      let c = l.c;
-      let dir = l.dir;
+    rafId.current = window.requestAnimationFrame(() => {
+      pending.current = false;
+      if (isDevPerf) console.time?.('beam-trace');
 
-      let guard = 0;
-      const maxSteps = rows * cols * 4;
-      while (guard++ < maxSteps) {
-        const v = dirToVec[dir];
-        const nr = r + v.dr;
-        const nc = c + v.dc;
+      const out = workSegments.current;
+      const result = traceBeams(safeGrid, lasersMemo, dims.rows, dims.cols, targetsMemo, out);
 
-        // Segment from center to next cell center in grid coords
-        segs.push({ x1: c, y1: r, x2: nc, y2: nr, color: l.color || '#fb923c' });
+      if (isDevPerf) console.timeEnd?.('beam-trace');
 
-        r = nr; c = nc;
-        if (r < 0 || r >= rows || c < 0 || c >= cols) break;
-
-        // Check target hit
-        const hitTarget = targetList.find(t => t.r === r && t.c === c);
-        if (hitTarget) {
-          hitTarget.lit = true;
-          // Continue past target; in future could stop beam here
-        }
-
-        const tile = safeGrid[r][c];
-        if (tile.type === 'mirror') {
-          dir = reflect(tile.orientation, dir);
-        } else if (tile.type === 'block') {
-          // stop beam on block
-          break;
-        } else {
-          // empty, continue
+      // Only update state if segments array changed in length or points
+      let changed = segments.length !== result.segments.length;
+      if (!changed) {
+        for (let i = 0; i < segments.length; i++) {
+          const a = segments[i], b = result.segments[i];
+          if (a.x1 !== b.x1 || a.y1 !== b.y1 || a.x2 !== b.x2 || a.y2 !== b.y2 || a.color !== b.color) {
+            changed = true; break;
+          }
         }
       }
+      if (changed) {
+        // Create a new reference but reuse underlying objects from out
+        setSegments(result.segments.slice());
+      }
+
+      // Push lit target state outward once per frame
+      onTargetsUpdate && onTargetsUpdate(result.litTargets);
+      lastInputs.current = { grid: safeGrid, lasers: lasersMemo, targets: targetsMemo, dims };
     });
 
-    setSegments(segs);
-    // push lit state out
-    onTargetsUpdate && onTargetsUpdate(targetList);
-  }, [safeGrid, lasers, rows, cols, onTargetsUpdate]); // targets included via onTargetsUpdate
+    return () => {
+      if (rafId.current) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = 0;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeGrid, lasersMemo, targetsMemo, dims.rows, dims.cols]);
 
   return segments;
 }

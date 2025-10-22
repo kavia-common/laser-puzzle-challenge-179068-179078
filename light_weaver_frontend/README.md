@@ -51,6 +51,16 @@ npm start
 - Backend API calls are not cached and are allowed to pass through to the network.
 - Gameplay continues offline; the API badge will show “Offline”.
 
+## Developer performance instrumentation
+
+To enable lightweight performance timings (console.time) for the beam tracer and board drawing, open the browser console and run:
+
+```js
+window.__LW_DEV = true;
+```
+
+Reload to see timing logs.
+
 ## Scripts
 
 - `npm start` – start local dev server on http://localhost:3000

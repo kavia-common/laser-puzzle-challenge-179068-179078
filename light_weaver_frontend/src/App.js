@@ -136,15 +136,20 @@ function App() {
     setRotationKey(k => k + 1);
   };
 
+  /**
+   * Rotate a mirror at (r,c). Uses functional setState to batch updates.
+   */
   const handleRotate = useCallback((r, c) => {
     setGrid(prev => {
-      const next = prev.map(row => row.slice());
-      const tile = next[r][c];
-      if (tile.type === 'mirror') {
-        // Rotate through 4 mirror orientations: '/', '\' plus flipped states conceptually
-        // We'll encode orientation as one of: 'slash' and 'backslash'
+      // copy rows shallowly; copy only the touched tile deeply
+      const next = prev.map(row => row);
+      const tile = prev[r][c];
+      if (tile?.type === 'mirror') {
         const nextOri = tile.orientation === 'slash' ? 'backslash' : 'slash';
-        next[r][c] = { ...tile, orientation: nextOri };
+        // avoid recreating entire row if possible
+        const newRow = next[r].slice();
+        newRow[c] = { ...tile, orientation: nextOri };
+        next[r] = newRow;
       }
       return next;
     });

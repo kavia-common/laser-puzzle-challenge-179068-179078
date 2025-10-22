@@ -1,7 +1,11 @@
 import React, { useCallback } from 'react';
 
+/**
+ * Tile component: interactive mirror or empty cell.
+ * Memoized to avoid unnecessary re-renders.
+ */
 // PUBLIC_INTERFACE
-export default function Tile({ tile, r, c, size, onRotate }) {
+function Tile({ tile, r, c, size, onRotate }) {
   /**
    * A single grid tile. Mirrors can be rotated by click/tap/Enter/Space.
    */
@@ -35,3 +39,14 @@ export default function Tile({ tile, r, c, size, onRotate }) {
     </button>
   );
 }
+
+export default React.memo(Tile, (prev, next) => {
+  // Avoid re-render if identity and key props are same
+  return (
+    prev.size === next.size &&
+    prev.r === next.r &&
+    prev.c === next.c &&
+    prev.tile?.type === next.tile?.type &&
+    prev.tile?.orientation === next.tile?.orientation
+  );
+});

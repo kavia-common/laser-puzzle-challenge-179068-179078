@@ -1,105 +1,158 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 import useBeamSimulation from '../hooks/useBeamSimulation';
 import '../../index.css';
 import '../styles/game.css';
 import Tile from './Tile';
 
+// Simple perf switch: window.__LW_DEV = true to view console.time entries
+const isDevPerf = typeof window !== 'undefined' && !!window.__LW_DEV;
+
 /**
  * GameBoard renders:
- * - A canvas for beams and overlay.
- * - An interactive grid of tiles for mirrors/targets (for accessibility).
- * - It computes beams via the simulation hook on each state change.
+ * - A canvas for beams and overlay, using rAF to draw without re-rendering React tree.
+ * - An interactive grid of tiles for mirrors (kept as lightweight buttons).
+ * - Caches the static grid background using an offscreen canvas per cell size.
  */
 const CELL_SIZE_BASE = 44; // base size; responsive scaling applied
 
 // PUBLIC_INTERFACE
 export default function GameBoard({ grid, staticItems, targets, levelInfo, onRotate, onTargetsUpdate }) {
   /** grid: 2D array of tiles { type: 'empty'|'mirror'|'block', orientation? }
-   * staticItems: e.g. walls in the future
+   * staticItems: reserved
    * targets: array of { r, c, lit }
    * levelInfo: { lasers: [{ r,c,dir }], rows, cols }
    */
   const canvasRef = useRef(null);
-  const overlayRef = useRef(null);
   const containerRef = useRef(null);
-  const beams = useBeamSimulation({ grid, lasers: levelInfo.lasers, rows: levelInfo.rows, cols: levelInfo.cols, targets, onTargetsUpdate });
+  const offscreenRef = useRef(null); // caches static grid background per size
+  const lastSizeRef = useRef({ cell: 0, rows: 0, cols: 0 });
 
   const { rows, cols } = levelInfo;
+  const beams = useBeamSimulation({
+    grid,
+    lasers: levelInfo.lasers,
+    rows: levelInfo.rows,
+    cols: levelInfo.cols,
+    targets,
+    onTargetsUpdate
+  });
 
   const cellSize = useMemo(() => {
     // Fit grid within container width with padding
     const width = containerRef.current?.clientWidth || (cols * CELL_SIZE_BASE + 16);
     const maxCell = Math.floor((Math.min(width, 600)) / cols);
     return Math.max(26, Math.min(56, maxCell));
-  }, [cols, levelInfo.rows]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cols, levelInfo.rows]);
+
+  const ensureOffscreen = useCallback((cell, rCount, cCount) => {
+    // Build or rebuild a cached static background for current geometry
+    const keyChanged =
+      !offscreenRef.current ||
+      lastSizeRef.current.cell !== cell ||
+      lastSizeRef.current.rows !== rCount ||
+      lastSizeRef.current.cols !== cCount;
+
+    if (!keyChanged) return offscreenRef.current;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = cCount * cell;
+    const h = rCount * cell;
+    const off = document.createElement('canvas');
+    off.width = Math.floor(w * dpr);
+    off.height = Math.floor(h * dpr);
+    const octx = off.getContext('2d');
+    octx.scale(dpr, dpr);
+
+    // Background
+    octx.fillStyle = '#ffffff';
+    octx.fillRect(0, 0, w, h);
+
+    // Grid lines
+    octx.strokeStyle = 'rgba(0,0,0,0.06)';
+    octx.lineWidth = 1;
+    for (let r = 0; r <= rCount; r++) {
+      octx.beginPath();
+      octx.moveTo(0, r * cell + 0.5);
+      octx.lineTo(w, r * cell + 0.5);
+      octx.stroke();
+    }
+    for (let c = 0; c <= cCount; c++) {
+      octx.beginPath();
+      octx.moveTo(c * cell + 0.5, 0);
+      octx.lineTo(c * cell + 0.5, h);
+      octx.stroke();
+    }
+
+    offscreenRef.current = off;
+    lastSizeRef.current = { cell, rows: rCount, cols: cCount };
+    return off;
+  }, []);
 
   useEffect(() => {
-    // Draw beams on canvas
+    // Draw using rAF to decouple from React updates
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
     const w = cols * cellSize;
     const h = rows * cellSize;
+
+    // Size canvas
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
-
     const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset
     ctx.scale(dpr, dpr);
+
+    // Prepare offscreen
+    const off = ensureOffscreen(cellSize, rows, cols);
+
+    // Render once per update (already invoked within rAF in the hook)
+    if (isDevPerf) console.time?.('board-draw');
+    // Blit static bg
     ctx.clearRect(0, 0, w, h);
-
-    // Draw grid background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-    ctx.lineWidth = 1;
-    for (let r = 0; r <= rows; r++) {
-      ctx.beginPath();
-      ctx.moveTo(0, r * cellSize + 0.5);
-      ctx.lineTo(w, r * cellSize + 0.5);
-      ctx.stroke();
-    }
-    for (let c = 0; c <= cols; c++) {
-      ctx.beginPath();
-      ctx.moveTo(c * cellSize + 0.5, 0);
-      ctx.lineTo(c * cellSize + 0.5, h);
-      ctx.stroke();
-    }
+    ctx.drawImage(off, 0, 0, off.width / dpr, off.height / dpr);
 
     // Beams
     ctx.lineWidth = Math.max(2, Math.floor(cellSize / 14));
     ctx.lineCap = 'round';
-    beams.forEach(seg => {
+    for (let i = 0; i < beams.length; i++) {
+      const seg = beams[i];
       ctx.strokeStyle = seg.color || '#fb923c';
       ctx.beginPath();
       ctx.moveTo(seg.x1 * cellSize + cellSize / 2, seg.y1 * cellSize + cellSize / 2);
       ctx.lineTo(seg.x2 * cellSize + cellSize / 2, seg.y2 * cellSize + cellSize / 2);
       ctx.stroke();
-    });
+    }
 
     // Lasers origin highlight
-    levelInfo.lasers.forEach(l => {
+    for (let i = 0; i < levelInfo.lasers.length; i++) {
+      const l = levelInfo.lasers[i];
       ctx.fillStyle = '#ef4444';
       const x = l.c * cellSize;
       const y = l.r * cellSize;
       ctx.beginPath();
       ctx.arc(x + cellSize / 2, y + cellSize / 2, cellSize * 0.18, 0, Math.PI * 2);
       ctx.fill();
-    });
+    }
 
     // Targets highlight
-    targets.forEach(t => {
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
       const x = t.c * cellSize;
       const y = t.r * cellSize;
-      ctx.fillStyle = t.lit ? '#10b981' : '#9CA3AF';
       ctx.beginPath();
+      ctx.fillStyle = t.lit ? '#10b981' : '#9CA3AF';
       ctx.arc(x + cellSize / 2, y + cellSize / 2, cellSize * 0.2, 0, Math.PI * 2);
       ctx.fill();
-    });
-  }, [beams, cellSize, cols, rows, levelInfo.lasers, targets]);
+    }
+    if (isDevPerf) console.timeEnd?.('board-draw');
+  }, [beams, cellSize, cols, rows, ensureOffscreen, levelInfo.lasers, targets]);
+
+  // Memoized Tile to avoid re-rendering non-changing cells
+  const MemoTile = useMemo(() => React.memo(Tile), []);
 
   return (
     <div className="lw-board" ref={containerRef} style={{ width: Math.min(600, cols * cellSize) }}>
@@ -109,7 +162,7 @@ export default function GameBoard({ grid, staticItems, targets, levelInfo, onRot
           {grid.map((row, r) => (
             <div className="lw-row" key={`r-${r}`} style={{ height: cellSize }}>
               {row.map((tile, c) => (
-                <Tile
+                <MemoTile
                   key={`t-${r}-${c}`}
                   tile={tile}
                   r={r}
